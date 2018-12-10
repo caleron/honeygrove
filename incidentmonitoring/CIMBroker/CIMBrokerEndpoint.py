@@ -1,3 +1,5 @@
+import time
+
 import broker
 import CIMBroker.CIMBrokerConfig as CIMBrokerConfig
 from CIMBroker.CIMBrokerConfig import es
@@ -59,6 +61,9 @@ class CIMBrokerEndpoint:
 
         :param logQueue:
         """
+        if len(logQueue) == 0:
+            # sleep 10ms
+            time.sleep(0.01)
 
         for (topic, data) in logQueue:
             for entry in [data]:

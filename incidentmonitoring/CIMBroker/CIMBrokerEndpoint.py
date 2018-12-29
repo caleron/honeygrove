@@ -1,13 +1,17 @@
+import base64
+import json
+import logging
+import sys
 import time
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 import broker
+
 import CIMBroker.CIMBrokerConfig as CIMBrokerConfig
+import PrepareES
 from CIMBroker.CIMBrokerConfig import es
-import json
-import base64
-from datetime import datetime
 from MHR.MalwareLookup import MalwareLookup
-from PrepareES import PrepareES
 
 
 class CIMBrokerEndpoint:
@@ -18,11 +22,32 @@ class CIMBrokerEndpoint:
     logsQueue = listenEndpoint.make_subscriber("logs")
     fileQueue = listenEndpoint.make_subscriber("files")
 
+    # setup logging for this endpoint
+    # __name__ is the module name
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    # use UTC time
+    logging.Formatter.converter = time.gmtime
+    # some standard format
+    formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+    # log to error output
+    consoleHandler = logging.StreamHandler(sys.stderr)
+    consoleHandler.setFormatter(formatter)
+    logger.addHandler(consoleHandler)
+
+    # log to log file and use a rotating logger to avoid huge log files
+    # I think its okay to use a log file over e.g. syslog because its simple and you only need the logs when
+    # something goes wrong
+    # keep max 5 log files with 10 MB each
+    fileHandler = RotatingFileHandler(filename=__name__ + '.log', maxBytes=1024 * 1024 * 10, backupCount=5)
+    fileHandler.setFormatter(formatter)
+    logger.addHandler(fileHandler)
+
     @staticmethod
     def connectEndpoints():
         # for peering
         CIMBrokerEndpoint.listenEndpoint.listen(CIMBrokerConfig.BrokerComIP, CIMBrokerConfig.BrokerComport)
-    
+
     @staticmethod
     def getLogs():
         """
@@ -50,7 +75,7 @@ class CIMBrokerEndpoint:
         for msg in fileQueue:
             for m in msg:
                 with open('./ressources/%s.file' % timestamp, 'wb') as afile:
-                    afile.write(base64.b64decode(str(m))) 
+                    afile.write(base64.b64decode(str(m)))
             MalwareLookup.hashingFile()
 
     @staticmethod
@@ -67,13 +92,14 @@ class CIMBrokerEndpoint:
 
         for (topic, data) in logQueue:
             for entry in [data]:
-                "{0}".format(entry)
-                print("Log: ",entry)
+                CIMBrokerEndpoint.logger.info(entry)
 
                 # if connection to Elasticsearch is interrupted, cache logs into logs.json to prevent data loss.
                 if not PrepareES.check_ping():
-                    print('\033[91m' + "The logs will be saved in the logs.json under "
-                                       "/incidentmonitoring/ressources." + '\033[0m')
+                    CIMBrokerEndpoint.logger.info(
+                        "Elasticsearch unavailable. The logs will be saved in the logs.json under "
+                        "/incidentmonitoring/ressources.")
+
                     with open(
                             ''
                             './incidentmonitoring/ressources/logs.json', 'a') as outfile:
@@ -82,19 +108,23 @@ class CIMBrokerEndpoint:
 
                 else:
                     try:
-                        output_logs = json.loads(str(entry))                        
+                        output_logs = json.loads(str(entry))
                         # send logs into Elasticsearch
                         month = datetime.utcnow().strftime("%Y-%m")
                         indexname = "honeygrove-" + month
-                        es.index(index=indexname, doc_type="log_event", body=output_logs)
+                        resp = es.index(index=indexname, doc_type="log_event", body=output_logs)
+                        # index failed if this property is not at least 1
+                        # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-index_.html
+                        if resp["_shards"]["successful"] <= 0:
+                            CIMBrokerEndpoint.logger.error("Indexing of an event failed: " + resp)
 
-                    except Exception:
-                        pass
+                    except Exception as ex:
+                        CIMBrokerEndpoint.logger.exception(ex)
 
     @staticmethod
     def messageHandling():
         CIMBrokerEndpoint.connectEndpoints()
-        
+
         while True:
             msgs = CIMBrokerEndpoint.getLogs()
             msgs1 = CIMBrokerEndpoint.getFile()

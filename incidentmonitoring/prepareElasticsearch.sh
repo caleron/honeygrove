@@ -1,4 +1,4 @@
 #!/bin/bash
 
-echo "Creating Template and starting WatcherAlerts..."
+echo "Creating Template..."
 python3 -m PrepareES "$@"

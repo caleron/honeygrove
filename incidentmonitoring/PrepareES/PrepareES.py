@@ -1,10 +1,9 @@
 import json
-import time
 import socket
-import signal
-from datetime import datetime
+import time
+
 from CIMBroker.CIMBrokerConfig import es, ElasticIp, ElasticPort
-from PrepareES.WatcherAlerts import WatcherAlerts
+
 
 # Check if Elasticsearch on port 9200 is reachable
 def check_ping():
@@ -17,8 +16,16 @@ def check_ping():
         print('\033[91m' + "The connection to Elasticsearch is interrupted..." + '\033[0m')
     return pingstatus
 
-# Define the mapping and load it into the Elasticsearch index
+
 def loadMapping():
+    """
+    Define the mapping and load it into the Elasticsearch index.
+    Index templates are only applied when creating a new index, i.e. this should be called before starting the CIM
+    Broker endpoint. I think better way would be to define a index pattern. If you create an index pattern on your own
+    in Kibana, don't forget to use @timestamp as time filter, so you can also see the heartbeats of Honeygrove.
+
+    Source: https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-templates.html
+    """
     mapping = '''{
         "index_patterns": "honeygrove-*",
         "mappings": {
@@ -63,9 +70,9 @@ def readyToMap():
                     loadMapping()
                     print('\033[94m' + 'Mapping Complete.' + '\033[0m')
 
-                    # Execute Watcher alerts script
-                    print('\033[94m' + "Start Watcher Alerts..." + '\033[0m')
-                    WatcherAlerts.putWatch()
+                    # Previously, watcher were setup at this point to get slack notifications on specific events.
+                    # This functionality is not permanently available without licensing, so i removed it
+                    # source: https://www.elastic.co/subscriptions (is now called "alerts")
 
                 else:
                     print('\033[91m' + "es-master cluster state is red, trying again in 10s..." + '\033[0m')

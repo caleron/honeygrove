@@ -8,10 +8,10 @@ sudo apt-get install build-essential libssl-dev libffi-dev python-dev cmake
 cd /tmp/
 mkdir broker
 cd broker
-git clone --recursive https://github.com/bro/broker ./broker-git --branch v1.0.1 
+git clone --recursive https://github.com/bro/broker ./broker-git --branch v1.0.1
 cd broker-git
 ./configure --with-python=/usr/bin/python3
-make -j4 
+make -j4
 sudo make install
 cd ../..
 rm -rf broker
@@ -34,9 +34,11 @@ sudo systemctl start docker.service
 sudo systemctl enable docker.service
 sudo docker run hello-world
 sudo apt -y install docker-compose
-# vagrant is the user that docker uses to run the elasticsearch containers
-# this prevents the data nodes from crashing immediately because they could not write to this directory
-sudo chown -R vagrant /var/honeygrove
+# data nodes are mounted to this dir
+# ensure the containers have access to it
+# if this does not work, try something like sudo chown -R vagrant /var/honeygrove
+sudo mkdir -p /var/honeygrove
+sudo chmod -R 777 /var/honeygrove
 
 echo "installing important packages..."
 sudo apt-get install curl

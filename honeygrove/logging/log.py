@@ -34,6 +34,18 @@ def write(message):
     file.write(message)
     file.close()
 
+
+def log_message(message):
+    """
+    Writes a message to the log file and to console. Prepends the message with the current time.
+    :param message:
+    :return:
+    """
+    message = format_time(get_time()) + " " + message
+    write(message)
+    print(message)
+
+
 def get_coordinates(ipaddress):
     """
     Gets the Location Information for given IP Address

@@ -3,6 +3,7 @@ import base64
 import broker
 
 from honeygrove import config
+from honeygrove.logging.log import log_message
 
 
 class BrokerEndpoint:
@@ -14,6 +15,9 @@ class BrokerEndpoint:
     #Creates endpoint
     #global listenEndpoint
     listenEndpoint = broker.Endpoint()
+    # also listen for events
+    endpointStatusEvents = listenEndpoint.make_status_subscriber(True)
+
     # commands and settings are topics we subscribed to. (GLOBAL SCOPE for multihop)
     commandsQueue = listenEndpoint.make_subscriber("commands")
 
@@ -52,12 +56,14 @@ class BrokerEndpoint:
         :param ip: string
         :param port: int
         """
+        log_message("connecting to peers...")
         if [ip, port] != BrokerEndpoint.peerings[0:2]:
             if BrokerEndpoint.peerings[0] != 0:
                 BrokerEndpoint.unPeer(BrokerEndpoint.peerings[2])
 
             obj = BrokerEndpoint.listenEndpoint.peer(ip, port)
             BrokerEndpoint.peerings = [ip, port, obj]
+        log_message("connected to peers.")
 
     @staticmethod
     def unPeer(peeringObj=None):
@@ -90,4 +96,10 @@ class BrokerEndpoint:
             content = file.read()
             b64content = base64.b64encode(content)
             BrokerEndpoint.listenEndpoint.publish("files", b64content.decode(encoding="utf-8"))
+
+    @staticmethod
+    def log_peer_events_loop():
+        events = BrokerEndpoint.endpointStatusEvents.poll()
+        for entry in events:
+            log_message("peering event: " + str(entry))
 

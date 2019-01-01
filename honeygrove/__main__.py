@@ -1,14 +1,18 @@
+import atexit
 import os
 import threading
-import atexit
+
+from honeygrove.broker.BrokerEndpoint import BrokerEndpoint
+from honeygrove.core.HoneyAdapter import HoneyAdapter
 from honeygrove.logging import log
 from honeygrove.resources.ssh_resources import database as ssh_database
-from honeygrove.core.HoneyAdapter import HoneyAdapter
+
 
 def shutdownHoneyGrove():
     log.info("Shutting down")
     ssh_database.save()
     quit()
+
 
 if __name__ == '__main__':
 
@@ -26,12 +30,16 @@ if __name__ == '__main__':
     commandThread = threading.Thread(target=HoneyAdapter.command_message_loop, args=())
     heartbeatThread = threading.Thread(target=HoneyAdapter.hearbeat, args=())
 
+    # start the thread listening for events on the broker connection
+    eventsThread = threading.Thread(target=BrokerEndpoint.log_peer_events_loop, args=())
+
     commandThread.name = "CommandThread"
     heartbeatThread.name = "HeartbeatThread"
+    eventsThread.name = "EventsThread"
 
     commandThread.start()
     heartbeatThread.start()
+    eventsThread.start()
 
     ssh_database.restore()
     atexit.register(shutdownHoneyGrove)
-

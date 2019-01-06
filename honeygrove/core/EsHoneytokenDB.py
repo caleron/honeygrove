@@ -12,7 +12,6 @@ from twisted.python import failure
 from zope.interface import implementer
 
 from config import init_peer_ip
-from honeygrove import config
 
 
 @implementer(ICredentialsChecker)
@@ -168,6 +167,13 @@ class EsHoneytokenDB:
 
         return ret
 
+    @staticmethod
+    def password_match(matched, username):
+        if matched:
+            return username
+        else:
+            return failure.Failure(error.UnauthorizedLogin())
+
     def requestAvatarId(self, c):
         # attributes:
         # username: always set
@@ -176,44 +182,54 @@ class EsHoneytokenDB:
         # signature: in case of ISSHPrivateKey
         # sigData: in case of ISSHPrivateKey
 
-        # TODO make this work
-
-        try:
-            # try user authentification
-            user, password, ssh_public_key = self.getUser(c.username)
-
-        except error.UnauthorizedLogin:
+        if hasattr(c, 'password') and len(c.password) == 0:
+            # password or password-hash authentication
+            # do not allow empty passwords
             return defer.fail(error.UnauthorizedLogin())
 
-        except KeyError:
+        token_exists, password, ssh_public_key = self.get_honey_token(self.servicename, c.username)
 
-            # accept random
-            if self.servicename in config.honeytokendbProbabilities.keys():
-                randomAcceptProbability = config.honeytokendbProbabilities[self.servicename]
+        if token_exists:
+            if hasattr(c, 'blob'):
+                # key pair authentication
+                userkey = keys.Key.fromString(data=ssh_public_key)
 
-            if self.random_accept(c.username, c.password, randomAcceptProbability) and hasattr(c, 'password'):
-                if self.servicename in config.honeytokendbGenerating.keys():
-                    self.writeToDatabase(c.username, c.password,
-                                         ",".join(config.honeytokendbGenerating[self.servicename]))
+                if not c.blob == userkey.blob():
+                    # provided public key does not match public key from honey token
+                    return failure.Failure(error.ConchError("Unknown key."))
+
+                if not c.signature:
+                    # signature is missing
+                    # telling the client to sign his authentication (else the public key is kind of pointless)
+                    return defer.fail(concherror.ValidPublicKey())
+
+                # verify signed data
+                if userkey.verify(c.signature, c.sigData):
+                    return defer.succeed(c.username)
+                else:
+                    return failure.Failure(error.ConchError("Invalid Signature"))
+            else:
+                # password or password-hash authentication
+                # check password
+                return defer.maybeDeferred(c.checkPassword, password) \
+                    .addCallback(self.password_match, c.username)
+
+        else:
+            # no token exists
+            # TODO get IP somehow
+            count = self.access_count_from_ip(self.servicename, "", '-1h')
+
+            if count < 5:
+                return defer.fail(error.UnauthorizedLogin())
+
+            if hasattr(c, 'password'):
+                complexity = self.password_complexity(c.password)
+
+                if complexity > 0.7:
+                    self.save_honeytoken(self.servicename, c.username, c.password, bytearray())
                     return defer.succeed(c.username)
 
+            # TODO what about public key auth? will any bot every try this?
+
+            # no honey token created, just fail this
             return defer.fail(error.UnauthorizedLogin())
-
-        # means a honeytoken for the user exists, so check password / signature
-        if hasattr(c, 'blob'):
-            userkey = keys.Key.fromString(data=ssh_public_key)
-            if not c.blob == userkey.blob():
-                return failure.Failure(error.ConchError("Unknown key."))
-            if not c.signature:
-                return defer.fail(
-                    # telling the cient to sign his authentication (else the public key is kind of pointless)
-                    concherror.ValidPublicKey())
-            if userkey.verify(c.signature, c.sigData):
-                return defer.succeed(c.username)
-            else:
-                return failure.Failure(error.ConchError("Invalid Signature"))
-
-        if not password:
-            return defer.fail(error.UnauthorizedLogin())  # don't allow login with empty passwords
-
-        return defer.maybeDeferred(c.checkPassword, password).addCallback(self.password_match, user)

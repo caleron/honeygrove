@@ -12,6 +12,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from twisted.conch import recvline, avatar, insults, error
 from twisted.conch.ssh import factory, keys, session, userauth, common, transport
+
+from honeygrove.core.EsHoneytokenDB import EsHoneytokenDB
 from honeygrove import config
 transport.SSHTransportBase.ourVersionString = config.sshBanner
 
@@ -23,13 +25,12 @@ from honeygrove.resources.ssh_resources import database
 
 from honeygrove import config
 from honeygrove.core.FilesystemParser import FilesystemParser
-from honeygrove.core.HoneytokenDB import HoneytokenDataBase
 from honeygrove.logging import log
 from honeygrove.services.ServiceBaseModel import ServiceBaseModel
 from honeygrove.services.ServiceBaseModel import Limiter
 
 class SSHService(ServiceBaseModel):
-    c = HoneytokenDataBase(servicename=config.sshName)
+    c = EsHoneytokenDB(servicename=config.sshName)
 
 
     def __init__(self):
@@ -43,8 +44,8 @@ class SSHService(ServiceBaseModel):
 
         self._fService = factory.SSHFactory()
         self._fService.services[b'ssh-userauth'] = groveUserAuth
-        
-        self._limiter = Limiter(self._fService, config.sshName, config.SSH_conn_per_host)        
+
+        self._limiter = Limiter(self._fService, config.sshName, config.SSH_conn_per_host)
 
         self._fService.portal = p
 
@@ -101,7 +102,7 @@ class SSHProtocol(recvline.HistoricRecvLine):
         self.userIP = self.user.conn.transport.transport.client[0]
         self.l = log
         self.current_dir = expanduser("~")
-        
+
         load = self.loadLoginTime(self.userName)
         if load == False:
             # Zufällige, plausible last login time
@@ -530,7 +531,7 @@ class groveUserAuth(userauth.SSHUserAuthServer):
                 failure.Failure(error.ConchError('auth returned none')))
             return
 
-        honeytoken_actual = str(SSHService.c.getActual(user.decode(), rest, is_key))
+        honeytoken_actual = ''  # str(SSHService.c.getActual(user.decode(), rest, is_key))
         if is_key:
             rest = keys.Key.fromString(data=rest)._toString_OPENSSH(None)
 
@@ -544,6 +545,25 @@ class groveUserAuth(userauth.SSHUserAuthServer):
         d.addErrback(self._ebBadAuth)
 
         return d
+
+    def auth_password(self, packet):
+        """
+        Password authentication.  Payload::
+            string password
+
+        Make a UsernamePassword credential and verify it with our portal.
+        Copied from userauth.py, only the IP address assignment was added
+        """
+        from twisted.conch.ssh.common import getNS
+        from twisted.conch import interfaces
+        from twisted.cred import credentials
+
+        password = getNS(packet[1:])[0]
+        c = credentials.UsernamePassword(self.user, password)
+        # assign the IP address to the object
+        c.ip = self.transport.transport.client[0]
+        return self.portal.login(c, None, interfaces.IConchUser).addErrback(
+                                                        self._ebPassword)
 
 
 # SSHAvatar created by SSHSession implement ISession

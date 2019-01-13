@@ -1,9 +1,8 @@
 import re
 from datetime import datetime
+from typing import Union
 
-import twisted.conch.error as concherror
 from elasticsearch import Elasticsearch
-from twisted.conch.ssh import keys
 from twisted.cred import credentials
 from twisted.cred import error
 from twisted.cred.checkers import ICredentialsChecker
@@ -11,27 +10,24 @@ from twisted.internet import defer
 from twisted.python import failure
 from zope.interface import implementer
 
-from config import init_peer_ip
+from honeygrove.config import init_peer_ip
+from honeygrove.logging.log import log_message
 
 
 @implementer(ICredentialsChecker)
 class EsHoneytokenDB:
     """
-        Honeytoken Database.
-        Chredchecker used by all Services.
+    Honeytoken Database.
+    Credentials checker used by all Services. Only supports password-based auth because no bot used public key auth
+    so far.
     """
-
-    allServices = 'SSH,HTTP,FTP'
-
     credentialInterfaces = (credentials.IUsernamePassword,
-                            credentials.IUsernameHashedPassword,
-                            credentials.ISSHPrivateKey)
+                            credentials.IUsernameHashedPassword)
 
-    ElasticIp = "127.0.0.1"
     ElasticPort = 9200
     es = Elasticsearch([{'host': init_peer_ip, 'port': ElasticPort}])
 
-    def __init__(self, servicename):
+    def __init__(self, servicename: str):
         """
         @type servicename: str
         @param servicename: The name of the service which is using this instance of HoneytokenDB.
@@ -39,39 +35,38 @@ class EsHoneytokenDB:
         """
         self.servicename = servicename
 
-    def get_honey_token(self, service: str, username: str) -> (bool, str, bytearray):
+    def get_honey_token(self, username: str) -> Union[bool, str]:
         """
         Checks if the given credentials match a predefined honey token.
-        :param service: the service, e.g. SSH or Telnet
         :param username: the username to check
-        :return: (True, password, public key) if the given credential set match a honeytoken. returns False otherwise.
+        :return: password if the given credential set match a honeytoken. returns False otherwise.
         """
-        search = self.es.search("honeytoken", "honeytoken", {
+        query = {
             "query": {
                 "bool": {
                     "must": [
-                        {"match": {"service": service}},
-                        {"match": {"username": username}}
+                        {"match": {"service": self.servicename}},
+                        {"match": {"username": str(username)}}
                     ]
                 }
             },
             "sort": [
                 {"@timestamp": "desc"}  # get only the latest honey token
             ],
-            "_source": ["password", "public_key"],
+            "_source": ["password"],
             "size": 1,
-        })
+        }
+        search = self.es.search("honeytoken", "honeytoken", query)
         if search["hits"]["total"] == 0:  # no matching honey token
             return False
 
         doc = search["hits"]["hits"][0]["_source"]  # select the honeytoken document
-        return True, doc["password"], doc["public_key"]
+        return doc["password"]
 
-    def access_count_from_ip(self, service: str, ip: str, time_frame: str) -> int:
+    def access_count_from_ip(self, ip: str, time_frame: str) -> int:
         """
         Counts the login attempts from the given IP for the given service within the time range between now and modified
         now date.
-        :param service: the service, e.g. SSH or Telnet
         :param ip: the IP
         :param time_frame: time span modifier for the current time. This parameter is directly used in the elasticsearch
         query. Use e.g. "-1d" for the last day or "-3H" for the last 3 hours.
@@ -81,7 +76,7 @@ class EsHoneytokenDB:
             "query": {
                 "bool": {
                     "must": [
-                        {"match": {"service": service}},
+                        {"match": {"service": self.servicename}},
                         {"range": {"@timestamp": {"gte": "now-" + time_frame, "lte": "now"}}},
                         {"match": {"ip": ip}}
                     ]
@@ -144,21 +139,18 @@ class EsHoneytokenDB:
         # ensure complexity is between 0 and 1
         return min(1, max(0, complexity))
 
-    def save_honeytoken(self, service: str, username: str, password: str, public_key: bytearray) -> bool:
+    def save_honeytoken(self, username: str, password: str) -> bool:
         """
-        Saves a honeytoken to the database
-        :param service: the service, e.g. SSH or Telnet
+        Saves a honeytoken to the database. Only supports password-based authentication.
         :param username: the username
         :param password: the password or None
-        :param public_key: the public key in case of SSH private key authentication, None otherwise
         :return: True if saving was successful, False otherwise
         """
         ret = self.es.index("honeytoken", "honeytoken", {
             "@timestamp": datetime.utcnow().isoformat(),
             "username": username,
-            "service": service,
+            "service": self.servicename,
             "password": password,
-            "public_key": public_key if public_key is not None else None,  # set the public key only if it is not None
         })
         if ret["_shards"]["successful"] > 0:
             print("honeytoken saved.")
@@ -177,59 +169,47 @@ class EsHoneytokenDB:
     def requestAvatarId(self, c):
         # attributes:
         # username: always set
-        # password: in case of IUsernamePassword
-        # blob: the public key in case of ISSHPrivateKey
-        # signature: in case of ISSHPrivateKey
-        # sigData: in case of ISSHPrivateKey
+        # password: in case of IUsernamePassword or IUsernameHashedPassword
 
-        if hasattr(c, 'password') and len(c.password) == 0:
-            # password or password-hash authentication
-            # do not allow empty passwords
-            return defer.fail(error.UnauthorizedLogin())
-
-        token_exists, password, ssh_public_key = self.get_honey_token(self.servicename, c.username)
-
-        if token_exists:
-            if hasattr(c, 'blob'):
-                # key pair authentication
-                userkey = keys.Key.fromString(data=ssh_public_key)
-
-                if not c.blob == userkey.blob():
-                    # provided public key does not match public key from honey token
-                    return failure.Failure(error.ConchError("Unknown key."))
-
-                if not c.signature:
-                    # signature is missing
-                    # telling the client to sign his authentication (else the public key is kind of pointless)
-                    return defer.fail(concherror.ValidPublicKey())
-
-                # verify signed data
-                if userkey.verify(c.signature, c.sigData):
-                    return defer.succeed(c.username)
-                else:
-                    return failure.Failure(error.ConchError("Invalid Signature"))
-            else:
+        try:
+            if hasattr(c, 'password') and len(c.password) == 0:
                 # password or password-hash authentication
-                # check password
-                return defer.maybeDeferred(c.checkPassword, password) \
-                    .addCallback(self.password_match, c.username)
-
-        else:
-            # no token exists
-            # TODO get IP somehow
-            count = self.access_count_from_ip(self.servicename, "", '-1h')
-
-            if count < 5:
+                # do not allow empty passwords
                 return defer.fail(error.UnauthorizedLogin())
 
-            if hasattr(c, 'password'):
-                complexity = self.password_complexity(c.password)
+            password = self.get_honey_token(c.username.decode("unicode_escape"))
 
-                if complexity > 0.7:
-                    self.save_honeytoken(self.servicename, c.username, c.password, bytearray())
-                    return defer.succeed(c.username)
+            if password:
+                if hasattr(c, 'blob'):
+                    # public key authentication, no bot would ever try this (except using a stolen private key)
+                    return defer.fail(error.UnauthorizedLogin())
+                else:
+                    # password or password-hash authentication
+                    # check password
+                    return defer.maybeDeferred(c.checkPassword, password) \
+                        .addCallback(self.password_match, c.username)
 
-            # TODO what about public key auth? will any bot every try this?
+            else:
+                # no token exists
+                count = self.access_count_from_ip(c.ip, '1h')
 
-            # no honey token created, just fail this
+                if count < 5:
+                    return defer.fail(error.UnauthorizedLogin())
+
+                if hasattr(c, 'password'):
+                    decoded_password = c.password.decode("unicode_escape")
+                    complexity = self.password_complexity(decoded_password)
+
+                    log_message('password ' + decoded_password + ' has a complexity of ' + str(complexity))
+
+                    if complexity > 0.5:
+                        # password is sufficiently complex, grant access
+                        self.save_honeytoken(c.username.decode("unicode_escape"), decoded_password)
+                        return defer.succeed(c.username)
+
+                # no honey token created, just fail this
+                return defer.fail(error.UnauthorizedLogin())
+
+        except Exception as ex:
+            log_message(str(ex))
             return defer.fail(error.UnauthorizedLogin())

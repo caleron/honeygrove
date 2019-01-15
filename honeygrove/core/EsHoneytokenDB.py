@@ -2,7 +2,6 @@ import re
 from datetime import datetime
 from typing import Union
 
-from elasticsearch import Elasticsearch
 from twisted.cred import credentials
 from twisted.cred import error
 from twisted.cred.checkers import ICredentialsChecker
@@ -10,7 +9,8 @@ from twisted.internet import defer
 from twisted.python import failure
 from zope.interface import implementer
 
-from honeygrove.config import init_peer_ip
+from honeygrove.core.ElasticsearchConnect import get_elasticsearch_client
+from honeygrove.core.PasswordLists import PasswordLists
 from honeygrove.logging.log import log_message
 
 
@@ -24,8 +24,7 @@ class EsHoneytokenDB:
     credentialInterfaces = (credentials.IUsernamePassword,
                             credentials.IUsernameHashedPassword)
 
-    ElasticPort = 9200
-    es = Elasticsearch([{'host': init_peer_ip, 'port': ElasticPort}])
+    es = get_elasticsearch_client()
 
     def __init__(self, servicename: str):
         """
@@ -34,6 +33,7 @@ class EsHoneytokenDB:
 
         """
         self.servicename = servicename
+        self.password_position_checker = PasswordLists(servicename)
 
     def get_honey_token(self, username: str) -> Union[bool, str]:
         """
@@ -160,8 +160,11 @@ class EsHoneytokenDB:
         return ret
 
     @staticmethod
-    def password_match(matched, username):
+    def password_match(matched: bool, username: str, access_count: int):
         if matched:
+            if access_count == 0:
+                log_message("ALARM!!!! honey token used!!!!")
+
             return username
         else:
             return failure.Failure(error.UnauthorizedLogin())
@@ -177,27 +180,29 @@ class EsHoneytokenDB:
                 # do not allow empty passwords
                 return defer.fail(error.UnauthorizedLogin())
 
-            password = self.get_honey_token(c.username.decode("unicode_escape"))
+            honey_password = self.get_honey_token(c.username.decode("unicode_escape"))
 
-            if password:
+            if honey_password:
                 if hasattr(c, 'blob'):
                     # public key authentication, no bot would ever try this (except using a stolen private key)
                     return defer.fail(error.UnauthorizedLogin())
                 else:
                     # password or password-hash authentication
+                    # get access count from the IP
+                    count = self.access_count_from_ip(c.ip, '1h')
                     # check password
-                    return defer.maybeDeferred(c.checkPassword, password) \
-                        .addCallback(self.password_match, c.username)
+                    return defer.maybeDeferred(c.checkPassword, honey_password) \
+                        .addCallback(self.password_match, c.username, count)
 
             else:
                 # no token exists
-                count = self.access_count_from_ip(c.ip, '1h')
-
-                if count < 5:
-                    return defer.fail(error.UnauthorizedLogin())
-
                 if hasattr(c, 'password'):
                     decoded_password = c.password.decode("unicode_escape")
+                    password_position = self.password_position_checker.get_lowest_password_position(decoded_password)
+
+                    if password_position != -1 and password_position < 5:
+                        return defer.fail(error.UnauthorizedLogin())
+
                     complexity = self.password_complexity(decoded_password)
 
                     log_message('password ' + decoded_password + ' has a complexity of ' + str(complexity))

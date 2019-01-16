@@ -9,9 +9,10 @@ from twisted.internet import defer
 from twisted.python import failure
 from zope.interface import implementer
 
+from honeygrove.config import sshPort
 from honeygrove.core.ElasticsearchConnect import get_elasticsearch_client
 from honeygrove.core.PasswordLists import PasswordLists
-from honeygrove.logging.log import log_message
+from honeygrove.logging.log import log_message, botmaster_login
 
 
 @implementer(ICredentialsChecker)
@@ -159,14 +160,23 @@ class EsHoneytokenDB:
 
         return ret
 
-    @staticmethod
-    def password_match(matched: bool, username: str, access_count: int):
-        if matched:
-            if access_count == 0:
-                log_message("ALARM!!!! honey token used!!!!")
+    def password_match(self, matched: bool, username: bytes, password: str, ip: str):
+        # this function is called from a deferred
+        # if any error is thrown here, the error is silently ignored and the login fails
+        try:
+            if matched:
+                # get access count from the IP
+                access_count = self.access_count_from_ip(ip, '1h')
+                # If a client uses a valid credential set on its first attempt, he is considered to be a botmaster
+                if access_count == 0:
+                    botmaster_login(self.servicename, ip, sshPort, username.decode("unicode_escape"), password)
+                    log_message("ALARM!!!! honey token used!!!!")
 
-            return username
-        else:
+                return username
+            else:
+                return failure.Failure(error.UnauthorizedLogin())
+        except Exception as ex:
+            log_message(str(ex))
             return failure.Failure(error.UnauthorizedLogin())
 
     def requestAvatarId(self, c):
@@ -180,7 +190,8 @@ class EsHoneytokenDB:
                 # do not allow empty passwords
                 return defer.fail(error.UnauthorizedLogin())
 
-            honey_password = self.get_honey_token(c.username.decode("unicode_escape"))
+            username_decode = c.username.decode("unicode_escape")
+            honey_password = self.get_honey_token(username_decode)
 
             if honey_password:
                 if hasattr(c, 'blob'):
@@ -188,11 +199,9 @@ class EsHoneytokenDB:
                     return defer.fail(error.UnauthorizedLogin())
                 else:
                     # password or password-hash authentication
-                    # get access count from the IP
-                    count = self.access_count_from_ip(c.ip, '1h')
-                    # check password
-                    return defer.maybeDeferred(c.checkPassword, honey_password) \
-                        .addCallback(self.password_match, c.username, count)
+                    # check password (encode to bytes because the password to check against is also in bytes)
+                    return defer.maybeDeferred(c.checkPassword, honey_password.encode("unicode_escape")) \
+                        .addCallback(self.password_match, c.username, honey_password, c.ip)
 
             else:
                 # no token exists
@@ -209,7 +218,7 @@ class EsHoneytokenDB:
 
                     if complexity > 0.5:
                         # password is sufficiently complex, grant access
-                        self.save_honeytoken(c.username.decode("unicode_escape"), decoded_password)
+                        self.save_honeytoken(username_decode, decoded_password)
                         return defer.succeed(c.username)
 
                 # no honey token created, just fail this

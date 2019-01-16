@@ -365,3 +365,34 @@ def heartbeat():
 
     if print_status:
         print(message)
+
+
+def botmaster_login(service: str, ip: str, port: int, username: str, password: str) -> None:
+    """
+    Logs a recognized botmaster login
+    """
+    timestamp = format_time(get_time())
+
+    message = ('{} - [Botmaster login] Service: {}:{} IP: {} username: {} password: {}'
+               .format(timestamp, service, ip, port, username, password) + '\n')
+
+    if config.use_broker:
+        broker_message = json.dumps({
+            'event_type': 'botmaster_login',
+            '@timestamp': timestamp,
+            'service': service,
+            'ip': ip,
+            'port': str(port),
+            'successful': 'True',
+            'user': username,
+            'key': password,
+            'actual': [service],
+            'honeypotID': ID
+        })
+        BrokerEndpoint.BrokerEndpoint.sendLogs(broker_message)
+
+    if log_status:
+        write(message)
+
+    if print_status:
+        print(message)

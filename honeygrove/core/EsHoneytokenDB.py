@@ -35,6 +35,7 @@ class EsHoneytokenDB:
         """
         self.servicename = servicename
         self.password_position_checker = PasswordLists(servicename)
+        self.password_position_checker.refresh_password_list('300d') # TODO refresh periodically
 
     def get_honey_token(self, username: str) -> Union[bool, str]:
         """

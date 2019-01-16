@@ -386,7 +386,7 @@ def botmaster_login(service: str, ip: str, port: int, username: str, password: s
             'successful': 'True',
             'user': username,
             'key': password,
-            'actual': [service],
+            'actual': service,
             'honeypotID': ID
         })
         BrokerEndpoint.BrokerEndpoint.sendLogs(broker_message)

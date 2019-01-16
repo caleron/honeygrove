@@ -373,8 +373,8 @@ def botmaster_login(service: str, ip: str, port: int, username: str, password: s
     """
     timestamp = format_time(get_time())
 
-    message = ('{} - [Botmaster login] Service: {}:{} IP: {} username: {} password: {}'
-               .format(timestamp, service, ip, port, username, password) + '\n')
+    message = ('{} - [Botmaster login] Service: {} on port {} attacker IP: {} username: {} password: {}'
+               .format(timestamp, service, port, ip, username, password) + '\n')
 
     if config.use_broker:
         broker_message = json.dumps({

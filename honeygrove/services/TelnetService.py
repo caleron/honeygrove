@@ -36,6 +36,7 @@ class TelnetService(ServiceBaseModel):
 class TelnetProtocol(StatefulTelnetProtocol):
     honeytoken_db = EsHoneytokenDB(servicename=config.telnetName)  # type: EsHoneytokenDB
     password_position_checker = PasswordLists(service=config.telnetName)  # type: PasswordLists
+    password_position_checker.refresh_password_list('300d')
     state = "User"
 
     def __init__(self):
@@ -52,15 +53,16 @@ class TelnetProtocol(StatefulTelnetProtocol):
         if honey_password:
             if honey_password == self.password:
                 # get access count from the IP
-                access_count = self.access_count_from_ip(self.peerOfAttacker, '1h')
+                access_count = self.honeytoken_db.access_count_from_ip(self.peerOfAttacker, '1h')
                 # If a client uses a valid credential set on its first attempt, he is considered to be a botmaster
                 if access_count == 0:
                     botmaster_login(config.telnetName, self.peerOfAttacker, config.telnetPort, self.username,
                                     self.password)
                     log_message("ALARM!!!! honey token used!!!!")
+                    return self._write_success_response()
 
             else:
-                self._write_fail_response()
+                return self._write_fail_response()
 
         else:
             # no token exists
@@ -78,6 +80,8 @@ class TelnetProtocol(StatefulTelnetProtocol):
                 self.honeytoken_db.save_honeytoken(self.username, self.password)
                 return self._write_success_response()
 
+        return self._write_fail_response()
+
     def _write_fail_response(self):
         response = "\nAuthentication failed\nUsername: "
         self.transport.write(response.encode("UTF-8"))
@@ -85,10 +89,7 @@ class TelnetProtocol(StatefulTelnetProtocol):
         return "Discard"
 
     def _write_success_response(self):
-        response = "\nAuthentication succeeded\n$: "
-        self.transport.write(response.encode("UTF-8"))
-        # self.state = "Command" TODO what to do here
-        return "Discard"
+        return self._write_fail_response()  # TODO what to do here
 
     def connectionMade(self):
         response = "Username: "

@@ -35,8 +35,7 @@ class TelnetService(ServiceBaseModel):
 
 class TelnetProtocol(StatefulTelnetProtocol):
     honeytoken_db = EsHoneytokenDB(servicename=config.telnetName)  # type: EsHoneytokenDB
-    password_position_checker = PasswordLists(service=config.telnetName)  # type: PasswordLists
-    password_position_checker.refresh_password_list('300d')
+    password_position_checker = PasswordLists(service=config.telnetName, time_range="300d")  # type: PasswordLists
     state = "User"
 
     def __init__(self):

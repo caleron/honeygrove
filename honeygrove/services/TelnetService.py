@@ -52,7 +52,7 @@ class TelnetProtocol(StatefulTelnetProtocol):
         if honey_password:
             if honey_password == self.password:
                 # get access count from the IP
-                access_count = self.honeytoken_db.access_count_from_ip(self.peerOfAttacker, '1h')
+                access_count = self.honeytoken_db.access_count_from_ip(self.peerOfAttacker, '6h')
                 # If a client uses a valid credential set on its first attempt, he is considered to be a botmaster
                 if access_count == 0:
                     botmaster_login(config.telnetName, self.peerOfAttacker, config.telnetPort, self.username,

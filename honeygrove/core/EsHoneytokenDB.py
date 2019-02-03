@@ -166,7 +166,7 @@ class EsHoneytokenDB:
         try:
             if matched:
                 # get access count from the IP
-                access_count = self.access_count_from_ip(ip, '1h')
+                access_count = self.access_count_from_ip(ip, '6h')
                 # If a client uses a valid credential set on its first attempt, he is considered to be a botmaster
                 if access_count == 0:
                     botmaster_login(self.servicename, ip, sshPort, username.decode("unicode_escape"), password)

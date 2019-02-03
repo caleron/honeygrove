@@ -46,8 +46,6 @@ class TelnetProtocol(StatefulTelnetProtocol):
     def telnet_Password(self, line):
         self.password = line.decode("UTF-8")
 
-        log.login(config.telnetName, self.peerOfAttacker, config.telnetPort, False, self.username, self.password, "")
-
         honey_password = self.honeytoken_db.get_honey_token(self.username)
         if honey_password:
             if honey_password == self.password:
@@ -68,7 +66,7 @@ class TelnetProtocol(StatefulTelnetProtocol):
             password_position = self.password_position_checker.get_lowest_password_position(self.password)
 
             # do not allow passwords that are on the first 5 positions of known password lists
-            if password_position != -1 and password_position < 5:
+            if password_position < 5:
                 return self._write_fail_response()
 
             complexity = self.honeytoken_db.password_complexity(self.password)
@@ -82,18 +80,24 @@ class TelnetProtocol(StatefulTelnetProtocol):
         return self._write_fail_response()
 
     def _write_fail_response(self):
+        self._log_login_attempt(successful=False)
         response = "\nAuthentication failed\nUsername: "
         self.transport.write(response.encode("UTF-8"))
         self.state = "User"
         return "Discard"
 
     def _write_success_response(self):
+        self._log_login_attempt(successful=True)
         return self._write_fail_response()  # TODO what to do here
 
     def connectionMade(self):
         response = "Username: "
         self.transport.write(response.encode("UTF-8"))
         self.peerOfAttacker = self.transport.getPeer().host
+
+    def _log_login_attempt(self, successful: bool) -> None:
+        log.login(config.telnetName, self.peerOfAttacker, config.telnetPort, successful, self.username, self.password,
+                  "")
 
     def telnet_User(self, line):
         self.username = line.decode("UTF-8")

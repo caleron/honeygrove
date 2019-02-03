@@ -209,7 +209,7 @@ class EsHoneytokenDB:
                     decoded_password = c.password.decode("unicode_escape")
                     password_position = self.password_position_checker.get_lowest_password_position(decoded_password)
 
-                    if password_position != -1 and password_position < 5:
+                    if password_position < 5:
                         return defer.fail(error.UnauthorizedLogin())
 
                     complexity = self.password_complexity(decoded_password)

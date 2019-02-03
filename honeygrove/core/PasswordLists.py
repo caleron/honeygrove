@@ -105,12 +105,12 @@ class PasswordLists:
 
     def get_lowest_password_position(self, password: str) -> int:
         """
-        Tries to determine the lowest position of the specified password with the current cache. Returns -1 if the
+        Tries to determine the lowest position of the specified password with the current cache. Returns 9999 if the
         password is not in the cache.
-        Also refreshes the internal cache if it is expired
+        Also refreshes the internal cache if it is expired.
 
         :param password: The password to check
-        :return: The one-based password position or -1
+        :return: The one-based password position or 9999
         """
         # Refresh the password position cache if the time has come
         if (datetime.now() - self._last_refresh).total_seconds() > self.__refresh_interval_seconds:
@@ -120,4 +120,4 @@ class PasswordLists:
             return self._password_positions[password]
 
         # Password is not among the first <__max_password_position> passwords of any password list
-        return -1
+        return 9999

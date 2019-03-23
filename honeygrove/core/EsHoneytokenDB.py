@@ -9,7 +9,7 @@ from twisted.internet import defer
 from twisted.python import failure
 from zope.interface import implementer
 
-from core.PasswordPopularity import PasswordPopularity
+from honeygrove.core.PasswordPopularity import PasswordPopularity
 from honeygrove.config import sshPort
 from honeygrove.core.ElasticsearchConnect import get_elasticsearch_client
 from honeygrove.core.PasswordLists import PasswordLists

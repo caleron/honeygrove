@@ -55,6 +55,7 @@ class PasswordPopularity:
                     "must": [
                         {"match": {"service": self.service}},
                         {"match": {"event_type": "login"}},
+                        {"match": {"successful": "False"}},
                         {"range": {"@timestamp": {"gte": "now-" + self._time_range, "lte": "now"}}}
                     ]
                 }

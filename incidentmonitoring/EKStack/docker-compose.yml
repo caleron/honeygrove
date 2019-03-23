@@ -10,7 +10,7 @@ services:
       - "9300"
     environment:
       BM_ES_NODE_NAME: "es-master"
-      ES_JAVA_OPTS: "-Xms250m -Xmx250m"
+      ES_JAVA_OPTS: "-Xms5g -Xmx5g"
       BM_ES_MASTER: "true"
       BM_ES_DATA: "false"
       action.auto_create_index: "true"

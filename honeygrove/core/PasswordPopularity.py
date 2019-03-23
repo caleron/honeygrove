@@ -15,8 +15,9 @@ class PasswordBlacklist:
         Initializes a new PasswordBlacklist instance.
 
         :param service: The service name, e.g. Telnet or SSH
-        :param time_range: The time range to load the password IP count for, e.g. 30d means that the number of IPs that
-        used a password within the last 30 days wil be determined.
+        :param time_range: The time range to load the password IP count for, e.g. 10d means that the number of IPs that
+        used a password within the last 10 days wil be determined. If you use a big value (e.g. 90 days), the
+        elasticsearch instance could crash with an OutOfMemoryError.
         """
         self.service = service
 

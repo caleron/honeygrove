@@ -9,6 +9,7 @@ from twisted.internet import defer
 from twisted.python import failure
 from zope.interface import implementer
 
+from core.PasswordPopularity import PasswordPopularity
 from honeygrove.config import sshPort
 from honeygrove.core.ElasticsearchConnect import get_elasticsearch_client
 from honeygrove.core.PasswordLists import PasswordLists
@@ -35,6 +36,7 @@ class EsHoneytokenDB:
         """
         self.servicename = servicename
         self.password_position_checker = PasswordLists(servicename, "300d")
+        self.password_popularity_checker = PasswordPopularity(servicename, "20d")
 
     def get_honey_token(self, username: str) -> Union[bool, str]:
         """
@@ -192,6 +194,7 @@ class EsHoneytokenDB:
 
             username_decode = c.username.decode("unicode_escape")
             honey_password = self.get_honey_token(username_decode)
+            decoded_password = c.password.decode("unicode_escape")
 
             if honey_password:
                 if hasattr(c, 'blob'):
@@ -199,6 +202,14 @@ class EsHoneytokenDB:
                     return defer.fail(error.UnauthorizedLogin())
                 else:
                     # password or password-hash authentication
+                    password_popularity = self.password_popularity_checker.get_password_ip_count(decoded_password)
+
+                    # do not allow passwords that appeared more than 20 times within the last 20 days
+                    if password_popularity > 20:
+                        log_message("honeytoken password " + decoded_password + " appeared " + str(password_popularity)
+                                    + ' within the last 20 days - access denied!')
+                        return defer.fail(error.UnauthorizedLogin())
+
                     # check password (encode to bytes because the password to check against is also in bytes)
                     return defer.maybeDeferred(c.checkPassword, honey_password.encode("unicode_escape")) \
                         .addCallback(self.password_match, c.username, honey_password, c.ip)
@@ -206,10 +217,20 @@ class EsHoneytokenDB:
             else:
                 # no token exists
                 if hasattr(c, 'password'):
-                    decoded_password = c.password.decode("unicode_escape")
+                    password_popularity = self.password_popularity_checker.get_password_ip_count(decoded_password)
+
+                    # do not allow passwords that appeared more than 20 times within the last 20 days
+                    if password_popularity > 20:
+                        log_message("password " + decoded_password + " appeared " + str(password_popularity)
+                                    + ' within the last 20 days - access denied!')
+                        return defer.fail(error.UnauthorizedLogin())
+
                     password_position = self.password_position_checker.get_lowest_password_position(decoded_password)
 
+                    # do not allow passwords that are among the first 5 passwords of any password list
                     if password_position < 5:
+                        log_message("password " + decoded_password + " has the lowest position "
+                                    + str(password_position) + ' on a password list - access denied!')
                         return defer.fail(error.UnauthorizedLogin())
 
                     complexity = self.password_complexity(decoded_password)

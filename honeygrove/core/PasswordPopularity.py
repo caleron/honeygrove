@@ -4,7 +4,7 @@ from honeygrove.core.ElasticsearchConnect import get_elasticsearch_client
 from honeygrove.logging import log
 
 
-class PasswordBlacklist:
+class PasswordPopularity:
     """
     This class determines passwords which has been used by too many different IPs in a certain time frame to blacklist
     these passwords for honeytoken creation.
@@ -84,6 +84,7 @@ class PasswordBlacklist:
 
         self._last_refresh = datetime.now()
         self._password_ip_counts = temp_password_ip_counts
+        log.write("password ip count cache reloaded\n")
 
     def get_password_ip_count(self, password: str) -> int:
         """

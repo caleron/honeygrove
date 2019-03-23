@@ -9,10 +9,10 @@ from twisted.internet import defer
 from twisted.python import failure
 from zope.interface import implementer
 
-from honeygrove.core.PasswordPopularity import PasswordPopularity
 from honeygrove.config import sshPort
 from honeygrove.core.ElasticsearchConnect import get_elasticsearch_client
 from honeygrove.core.PasswordLists import PasswordLists
+from honeygrove.core.PasswordPopularity import PasswordPopularity
 from honeygrove.logging.log import log_message, botmaster_login
 
 
@@ -172,10 +172,12 @@ class EsHoneytokenDB:
                 # If a client uses a valid credential set on its first attempt, he is considered to be a botmaster
                 if access_count == 0:
                     botmaster_login(self.servicename, ip, sshPort, username.decode("unicode_escape"), password)
-                    log_message("ALARM!!!! honey token used!!!!")
+                    log_message("ALARM!!!! honey token used for the first time!!!!")
 
+                log_message("password matches with honey token - ACCESS GRANTED!")
                 return username
             else:
+                log_message("password does not match with honey token - access denied!")
                 return failure.Failure(error.UnauthorizedLogin())
         except Exception as ex:
             log_message(str(ex))
@@ -199,6 +201,7 @@ class EsHoneytokenDB:
             if honey_password:
                 if hasattr(c, 'blob'):
                     # public key authentication, no bot would ever try this (except using a stolen private key)
+                    log_message("login attempt with blob - not supported - access denied!")
                     return defer.fail(error.UnauthorizedLogin())
                 else:
                     # password or password-hash authentication

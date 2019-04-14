@@ -5,6 +5,7 @@ from honeygrove.logging import log
 
 
 class PasswordPopularity:
+    _password_count_revoke_threshold = 20
     """
     This class determines passwords which has been used by too many different IPs in a certain time frame to blacklist
     these passwords for honeytoken creation.
@@ -43,20 +44,30 @@ class PasswordPopularity:
         :return: None
         """
         log.write("reloading password ip count cache\n")
+        temp_password_ip_counts = self._load_password_popularities(self._time_range, self.service)
+
+        self._last_refresh = datetime.now()
+        self._password_ip_counts = temp_password_ip_counts
+        log.write("password ip count cache reloaded\n")
+
+    @staticmethod
+    def _load_password_popularities(time_range: str, service: str = "") -> dict:
+        """
+        :param time_range the time range in which the password must have been used, e.g. 20d
+        :param service The service for which the passwords have been used. Leave empty to include all services
+        """
         # Get the elasticsearch client
         es = get_elasticsearch_client()
         # use local working variable so the global variable has no inconsistent state
         temp_password_ip_counts = {}
-
         # This query searches for login
-        result = es.search(index='honeygrove-*', doc_type='log_event', body={
+        request = {
             "query": {
                 "bool": {
                     "must": [
-                        {"match": {"service": self.service}},
                         {"match": {"event_type": "login"}},
                         {"match": {"successful": "False"}},
-                        {"range": {"@timestamp": {"gte": "now-" + self._time_range, "lte": "now"}}}
+                        {"range": {"@timestamp": {"gte": "now-" + time_range, "lte": "now"}}}
                     ]
                 }
             },
@@ -77,15 +88,16 @@ class PasswordPopularity:
                 }
             },
             "size": 0
-        })
+        }
+        if len(service) > 0:
+            request["query"]["bool"]["must"].append({"match": {"service": service}})
 
+        result = es.search(index='honeygrove-*', doc_type='log_event', body=request)
         for bucket in result["aggregations"]["passwords"]["buckets"]:
             password = bucket["key"]
             temp_password_ip_counts[password] = bucket["ip_count"]["value"]
 
-        self._last_refresh = datetime.now()
-        self._password_ip_counts = temp_password_ip_counts
-        log.write("password ip count cache reloaded\n")
+        return temp_password_ip_counts
 
     def get_password_ip_count(self, password: str) -> int:
         """
@@ -104,3 +116,39 @@ class PasswordPopularity:
 
         # Password has not been used in the specified time range
         return 0
+
+    @staticmethod
+    def revoke_frequent_honeytokens():
+        """
+        Revokes (deletes) honeytokens that have been used more than _password_count_revoke_threshold within the last
+        10 days. Schedules itself after completion to run in 24 hours again.
+        :return: None
+        """
+        print("checking for honeytokens to revoke...")
+        popularities = PasswordPopularity._load_password_popularities("10d")
+
+        # collect all passwords that have been used too frequently
+        revoke_passwords = []
+        for password, count in popularities:
+            if count > PasswordPopularity._password_count_revoke_threshold:
+                revoke_passwords.append(password)
+
+        if len(revoke_passwords) == 0:
+            print("no passwords to revoke")
+
+        # revoke all honeytokens that are in the revoke_passwords array
+        es = get_elasticsearch_client()
+        result = es.delete_by_query(index='honeytoken', doc_type='honeytoken', body={
+            "query": {
+                "bool": {
+                    "must": [
+                        {"terms": {"password": revoke_passwords}}
+                    ]
+                }
+            },
+        })
+        print("revoked " + result.deleted + " honeytokens")
+
+        # schedule the next run in a day
+        import threading
+        threading.Timer(3600 * 24, PasswordPopularity.revoke_frequent_honeytokens).start()

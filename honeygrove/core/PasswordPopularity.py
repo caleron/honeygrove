@@ -147,7 +147,7 @@ class PasswordPopularity:
                 }
             },
         })
-        print("revoked " + result["deleted"] + " honeytokens")
+        print("revoked " + str(result["deleted"]) + " honeytokens")
 
         # schedule the next run in a day
         import threading

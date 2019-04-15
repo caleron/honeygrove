@@ -129,7 +129,7 @@ class PasswordPopularity:
 
         # collect all passwords that have been used too frequently
         revoke_passwords = []
-        for password, count in popularities:
+        for password, count in popularities.items():
             if count > PasswordPopularity._password_count_revoke_threshold:
                 revoke_passwords.append(password)
 

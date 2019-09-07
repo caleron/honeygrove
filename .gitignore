@@ -1,3 +1,7 @@
 *.pyc
 .DS_Store
 honeygrove/resources/**
+
+.idea
+evaluations/plots
+evaluations/results

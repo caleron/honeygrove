@@ -5,9 +5,14 @@ from os import listdir, mkdir
 from os.path import isfile, join
 from elasticsearch import Elasticsearch
 import csv
+import numpy as np
 
 
 def to_csv(source: str, name: str, response: dict) -> None:
+    """
+    Saves the given response dict as CSV.
+    :return:
+    """
     csv_file = open("results/" + source + "-" + name + '.csv', 'w')
     out = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC, lineterminator='\n')
 
@@ -16,6 +21,9 @@ def to_csv(source: str, name: str, response: dict) -> None:
 
 
 def map_results(name: str, response: dict) -> dict:
+    """
+    Maps the given query result to a map that can be plotted.
+    """
     result = {}
     if name == "access-per-weekday":
         arr = response['aggregations']['attempts_per_weekday']['buckets']
@@ -51,27 +59,64 @@ def map_results(name: str, response: dict) -> dict:
     return result
 
 
-def plot(name: str, data1: dict, data2: dict = None) -> None:
+def plot(name: str, data1: dict, data2: dict = None, title: str = None, xlabel: str = None, ylabel: str = None,
+         data1_label: str = None, data2_label: str = None) -> None:
     """
     Creates a plot of data1 and optional data2 and saves it as png.
     """
-    x = []
-    y = []
-    for key, val in data1.items():
-        x.append(key)
-        y.append(val)
+    both_present = data2 is not None
+    alpha = 0.7
+    max_bars = 10
+    if both_present:
+        bar_offset = 0.2
+        bar_width = 0.3
+    else:
+        bar_offset = 0
+        bar_width = 0.5
 
-    plt.plot(x, y)
-    # same for data2, if set
-    if data2 is not None:
-        x = []
-        y = []
-        for key, val in data2.items():
-            x.append(key)
-            y.append(val)
-        plt.plot(x, y)
+    num_keys = min(max_bars, len(data1.keys()))
+    # returns a range that can be used with +/- operators to add a number to all elements in it
+    index = np.arange(num_keys)
 
+    # labels for the x axis
+    x = list(i for i in data1.keys())[:max_bars]
+    # render the x axis labels with vertical text
+    plt.xticks(index, tuple(x), rotation='vertical')
+
+    for i, d in enumerate([data1, data2]):
+        if d is None:
+            break  # e.g. if data2 is none
+
+        off = bar_offset if i == 0 else -bar_offset
+        color = 'b' if i == 0 else 'g'
+        label = data1_label if i == 0 else data2_label
+
+        # collect x, y values in arrays
+        y = list(i for i in d.values())[:max_bars]
+
+        # draw the bar
+        plt.bar(index + off, y, width=bar_width, align='center', color=color, label=label, alpha=alpha)
+        # display the actual values above the bar
+        for a, b in zip(range(0, len(x)), y):
+            plt.text(a + off, b, str(b), horizontalalignment='center')
+
+    # add more space at the bottom so the vertical descriptions are visible
+    fig = plt.gcf()
+    fig.subplots_adjust(left=0.1, bottom=0.3)
+
+    # add some titles and texts (only effective if the arguments are set)
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    # show a legend
+    if data1_label is not None:
+        plt.legend()
+        # add margin so there is space for the legend
+        plt.margins(y=0.2)
+
+    # save to disk
     plt.savefig("plots/" + name + '.png')
+    # reset for the next plot
     plt.close()
 
 
@@ -79,7 +124,7 @@ def execute_query(prefix: str, name: str, query: object) -> dict:
     # execute the query
     resp = es.search(prefix + '*', query)
     # save the resulting json
-    out = open("results/" + prefix + "-" + name, 'w')
+    out = open("results/" + prefix + "-" + name + ".json", 'w')
     json.dump(resp, out, indent=4)
     # map the result to a dict so it is easy to plot
     mapped = map_results(name, resp)
@@ -110,5 +155,28 @@ if __name__ == '__main__':
         mapped_pb = execute_query("pb", query_name, data)
         mapped_haas = execute_query("haas", query_name, data)
 
-        # display the results in one single plot
-        plot(query_name, mapped_pb, mapped_haas)
+        if query_name == "access-per-weekday":
+            # display the results in one single plot for this type
+            plot(query_name, mapped_pb, mapped_haas, title="Access per weekday", xlabel="Weekday",
+                 ylabel="Login attempts", data1_label="pb", data2_label="haas")
+
+        elif query_name == "hot-ip":
+            title = "Access count per IP"
+            xlabel = "IP address"
+            ylabel = "Access count"
+            plot("pb-" + query_name, mapped_pb, title=title + " (pb)", xlabel=xlabel, ylabel=ylabel)
+            plot("haas-" + query_name, mapped_haas, title=title + " (haas)", xlabel=xlabel, ylabel=ylabel)
+
+        elif query_name == "hot-ip-password-count":
+            title = "Unique login credentials"
+            xlabel = "IP address"
+            ylabel = "Number of unique login credentials"
+            plot("pb-" + query_name, mapped_pb, title=title + " (pb)", xlabel=xlabel, ylabel=ylabel)
+            plot("haas-" + query_name, mapped_haas, title=title + " (haas)", xlabel=xlabel, ylabel=ylabel)
+
+        elif query_name == "hot-user-passwords":
+            title = "Popular login credentials"
+            xlabel = "Username and password"
+            ylabel = "Login attempts"
+            plot("pb-" + query_name, mapped_pb, title=title + " (pb)", xlabel=xlabel, ylabel=ylabel)
+            plot("haas-" + query_name, mapped_haas, title=title + " (haas)", xlabel=xlabel, ylabel=ylabel)

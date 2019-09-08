@@ -1,5 +1,6 @@
 from pprint import pprint
 from datetime import datetime, date, timedelta
+import dateutil.parser
 import csv
 from elasticsearch import Elasticsearch
 
@@ -23,10 +24,11 @@ resp = es.search('pb*', {
     "size": 1000
 })
 
+# the number of successful login attempts until the same credential set is used for a botmaster login mapped to the
+# number occurrences
 spreads = {}
-disappointments = 0
-success = 0
 
+# prepare the CSV file writer
 csv_file = open("results/unique_botmaster_logins.csv", 'w')
 out = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC, lineterminator='\n')
 
@@ -53,6 +55,7 @@ for hit in resp['hits']['hits']:
                         }
                     }}
                 ],
+                # access must be from a different IP
                 "must_not": [{"match": {"ip": ip}}]
             }
         },
@@ -64,17 +67,16 @@ for hit in resp['hits']['hits']:
     else:
         spreads[count] += 1
 
+    # We need to ensure that the credential set of the botmaster login has only been used once before (on honeytoken
+    # creation). Only then we can be almost sure that the botmaster_login event was an actual botmaster login.
     if count == 1:
-        success += 1
         print("user: " + user + ", pw: " + password)
-        out.writerow([user, password])
-        # pprint(creation)
-    else:
-        disappointments += 1
-        # print("disappointment...")
-        pass
-
-print("got " + str(success) + " success and " + str(disappointments) + " disappointments")
+        # this is the time of the only one successful login before the botmaster login
+        honeytoken_creation_time = creation['hits']['hits'][0]['_source']['@timestamp']
+        # calculate the time from honeytoken creation to botmaster login
+        delay = dateutil.parser.parse(time) - dateutil.parser.parse(honeytoken_creation_time)
+        # save with days as time unit
+        out.writerow([user, password, int(delay.total_seconds()) / 3600 / 24])
 
 # for key, val in sorted(spreads.items()):
 #     print(str(key) + " values: " + str(val) + " times")

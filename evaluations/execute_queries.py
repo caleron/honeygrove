@@ -60,13 +60,12 @@ def map_results(name: str, response: dict) -> dict:
 
 
 def plot(name: str, data1: dict, data2: dict = None, title: str = None, xlabel: str = None, ylabel: str = None,
-         data1_label: str = None, data2_label: str = None) -> None:
+         data1_label: str = None, data2_label: str = None, max_bars: int = 10) -> None:
     """
     Creates a plot of data1 and optional data2 and saves it as png.
     """
     both_present = data2 is not None
     alpha = 0.7
-    max_bars = 10
     if both_present:
         bar_offset = 0.2
         bar_width = 0.3

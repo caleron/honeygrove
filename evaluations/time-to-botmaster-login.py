@@ -2,7 +2,10 @@ from pprint import pprint
 from datetime import datetime, date, timedelta
 import dateutil.parser
 import csv
+import collections
 from elasticsearch import Elasticsearch
+# noinspection PyUnresolvedReferences
+from execute_queries import plot
 
 es = Elasticsearch([{'host': "localhost", 'port': 9200}])
 
@@ -27,6 +30,7 @@ resp = es.search('pb*', {
 # the number of successful login attempts until the same credential set is used for a botmaster login mapped to the
 # number occurrences
 spreads = {}
+plot_result = []
 
 # prepare the CSV file writer
 csv_file = open("results/unique_botmaster_logins.csv", 'w')
@@ -76,7 +80,15 @@ for hit in resp['hits']['hits']:
         # calculate the time from honeytoken creation to botmaster login
         delay = dateutil.parser.parse(time) - dateutil.parser.parse(honeytoken_creation_time)
         # save with days as time unit
-        out.writerow([user, password, int(delay.total_seconds()) / 3600 / 24])
+        delay_days = int(delay.total_seconds()) / 3600 / 24
+        out.writerow([user, password, delay_days])
+        plot_result.append((user + ' ' + password, delay_days))
 
+plot_result = sorted(plot_result, key=lambda row: row[1], reverse=True)
+result = {}
+for row in plot_result:
+    result[row[0]] = float("{0:.2f}".format(row[1]))
+plot("time_to_botmaster_login", data1=result, title="Time to botmaster login", xlabel="Honeytoken",
+     ylabel="Time in days", max_bars=15)
 # for key, val in sorted(spreads.items()):
 #     print(str(key) + " values: " + str(val) + " times")

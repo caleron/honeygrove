@@ -48,7 +48,7 @@ def map_results(name: str, response: dict) -> dict:
         for row in arr:
             result[row['key']] = row['user_password_count']['value']
 
-    elif name == "hot-user-passwords":
+    elif name == "hot-user-passwords" or name == "hot-botmaster-login-creds":
         arr = response['aggregations']['user_password_count']['buckets']
         arr = sorted(arr, key=lambda row: row['doc_count'], reverse=True)
         for row in arr:
@@ -102,7 +102,7 @@ def plot(name: str, data1: dict, data2: dict = None, title: str = None, xlabel: 
 
     # add more space at the bottom so the vertical descriptions are visible
     fig = plt.gcf()
-    fig.subplots_adjust(left=0.1, bottom=0.3)
+    fig.subplots_adjust(left=0.2, bottom=0.4)
 
     # add some titles and texts (only effective if the arguments are set)
     plt.title(title)
@@ -115,7 +115,7 @@ def plot(name: str, data1: dict, data2: dict = None, title: str = None, xlabel: 
         plt.margins(y=0.2)
 
     # save to disk
-    plt.savefig("plots/" + name + '.png')
+    plt.savefig("plots/" + name + '.png', dpi=300)
     # reset for the next plot
     plt.close()
 
@@ -180,3 +180,9 @@ if __name__ == '__main__':
             ylabel = "Login attempts"
             plot("pb-" + query_name, mapped_pb, title=title + " (pb)", xlabel=xlabel, ylabel=ylabel)
             plot("haas-" + query_name, mapped_haas, title=title + " (haas)", xlabel=xlabel, ylabel=ylabel)
+
+        elif query_name == "hot-botmaster-login-creds":
+            title = "Popular credentials on detected botmaster logins"
+            xlabel = "Username and password"
+            ylabel = "Successful login"
+            plot("pb-" + query_name, mapped_pb, title=title + " (pb)", xlabel=xlabel, ylabel=ylabel)

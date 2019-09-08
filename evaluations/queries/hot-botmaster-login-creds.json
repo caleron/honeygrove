@@ -1,0 +1,36 @@
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match": {
+            "event_type": "botmaster_login"
+          }
+        },
+        {
+          "match": {
+            "service": "SSH"
+          }
+        },
+        {
+          "range": {
+            "@timestamp": {
+              "gte": "2019-04-15T00:00:00.000000",
+              "lte": "2019-06-20T00:00:00.000000"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "aggs": {
+    "user_password_count": {
+      "terms": {
+        "script": "doc['user'].value + ' ' + doc['key'].value",
+        "show_term_doc_count_error": true,
+        "size": 100
+      }
+    }
+  },
+  "size": 0
+}

@@ -97,8 +97,9 @@ def plot(name: str, data1: dict, data2: dict = None, title: str = None, xlabel: 
         # draw the bar
         plt.bar(index + off, y, width=bar_width, align='center', color=color, label=label, alpha=alpha)
         # display the actual values above the bar
+        maxy = max(y)
         for a, b in zip(range(0, len(x)), y):
-            plt.text(a + off, b, str(b), horizontalalignment='center')
+            plt.text(a + off, maxy * 0.1, str(b), horizontalalignment='center', rotation='vertical')
 
     # add more space at the bottom so the vertical descriptions are visible
     fig = plt.gcf()

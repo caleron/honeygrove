@@ -184,5 +184,5 @@ if __name__ == '__main__':
         elif query_name == "hot-botmaster-login-creds":
             title = "Popular credentials on detected botmaster logins"
             xlabel = "Username and password"
-            ylabel = "Successful login"
+            ylabel = "Successful logins"
             plot("pb-" + query_name, mapped_pb, title=title + " (pb)", xlabel=xlabel, ylabel=ylabel)

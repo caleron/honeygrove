@@ -1,6 +1,6 @@
 from pprint import pprint
 from datetime import datetime, date, timedelta
-
+import csv
 from elasticsearch import Elasticsearch
 
 es = Elasticsearch([{'host': "localhost", 'port': 9200}])
@@ -27,6 +27,9 @@ spreads = {}
 disappointments = 0
 success = 0
 
+csv_file = open("results/unique_botmaster_logins.csv", 'w')
+out = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC, lineterminator='\n')
+
 for hit in resp['hits']['hits']:
     source = hit['_source']
     user = source['user']
@@ -44,7 +47,8 @@ for hit in resp['hits']['hits']:
                     {"match": {"successful": "True"}},
                     {"range": {
                         "@timestamp": {
-                            "gte": datetime.strptime(time, "%Y-%m-%dT%H:%M:%S.%f") - timedelta(days=300),
+                            # "gte": "2019-04-15T00:00:00.000000",
+                            # "gte": datetime.strptime(time, "%Y-%m-%dT%H:%M:%S.%f") - timedelta(days=300),
                             "lte": time
                         }
                     }}
@@ -62,7 +66,8 @@ for hit in resp['hits']['hits']:
 
     if count == 1:
         success += 1
-        print("user: " + str(user) + ", pw: " + str(password))
+        print("user: " + user + ", pw: " + password)
+        out.writerow([user, password])
         # pprint(creation)
     else:
         disappointments += 1
@@ -71,9 +76,5 @@ for hit in resp['hits']['hits']:
 
 print("got " + str(success) + " success and " + str(disappointments) + " disappointments")
 
-for key, val in sorted(spreads.items()):
-    print(str(key) + " values: " + str(val) + " times")
-
-if __name__ == "__main__":
-    print(123)
-    pass
+# for key, val in sorted(spreads.items()):
+#     print(str(key) + " values: " + str(val) + " times")

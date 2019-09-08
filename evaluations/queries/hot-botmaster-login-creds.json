@@ -28,7 +28,7 @@
       "terms": {
         "script": "doc['user'].value + ' ' + doc['key'].value",
         "show_term_doc_count_error": true,
-        "size": 100
+        "size": 5000
       }
     }
   },

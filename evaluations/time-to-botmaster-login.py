@@ -76,12 +76,13 @@ for hit in resp['hits']['hits']:
     if count == 1:
         print("user: " + user + ", pw: " + password)
         # this is the time of the only one successful login before the botmaster login
-        honeytoken_creation_time = creation['hits']['hits'][0]['_source']['@timestamp']
+        doc = creation['hits']['hits'][0]['_source']
+        honeytoken_creation_time = doc['@timestamp']
         # calculate the time from honeytoken creation to botmaster login
         delay = dateutil.parser.parse(time) - dateutil.parser.parse(honeytoken_creation_time)
         # save with days as time unit
         delay_days = int(delay.total_seconds()) / 3600 / 24
-        out.writerow([user, password, delay_days])
+        out.writerow([user, password, "{0:.2f}".format(delay_days).replace(".", ","), ip])
         plot_result.append((user + ' ' + password, delay_days))
 
 plot_result = sorted(plot_result, key=lambda row: row[1], reverse=True)

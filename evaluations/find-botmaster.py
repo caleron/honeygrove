@@ -6,7 +6,11 @@ from elasticsearch import Elasticsearch
 es = Elasticsearch([{'host': "localhost", 'port': 9200}])
 
 
-def get_botmaster_candidates() -> list:
+def get_all_ip_access_counts() -> dict:
+    """
+    Retrieves the access counts of every IP address as well as their success rate.
+    :return: dict of IP to dict of access metrics
+    """
     print("running botmaster candidate query...")
 
     resp = es.search('pb*', {
@@ -46,10 +50,10 @@ def get_botmaster_candidates() -> list:
     })
     print("done with botmaster candidate query!")
 
-    botmaster_candidates = []
+    access_counts = {}
     for ip_bucket in resp['aggregations']['agg_ip']['buckets']:
         ip = ip_bucket['key']
-        login_count = ip_bucket['doc_count']
+        total_attempts = ip_bucket['doc_count']
         successful = 0
         failed = 0
         for success_bucket in ip_bucket['agg_successful']['buckets']:
@@ -61,7 +65,6 @@ def get_botmaster_candidates() -> list:
                 print("wtf???")
                 raise Exception
 
-        total_attempts = successful + failed
         success_rate = successful / total_attempts
 
         print("ip " + ip + " has "
@@ -70,19 +73,37 @@ def get_botmaster_candidates() -> list:
               + str(failed) + " failed, "
               + "success_rate of " + str(success_rate))
 
-        if (total_attempts < 50 and success_rate > 0.8) or (total_attempts < 5 and success_rate > 0.3):
-            print("NICE!!!!!")
-            botmaster_candidates.append({
-                "ip": ip,
-                "total_attempts": total_attempts,
-                "successful": successful,
-                "failed": failed,
-                "success_rate": success_rate,
-            })
+        access_counts[ip] = {
+            "ip": ip,
+            "total_attempts": total_attempts,
+            "successful": successful,
+            "failed": failed,
+            "success_rate": success_rate,
+        }
+
+    return access_counts
+
+
+def get_botmaster_candidates(all_access_counts: dict) -> dict:
+    """
+    Finds all IP address that might be a botmaster measured by access count and success rate.
+    :param all_access_counts: a dict of IP addresses to access metrics
+    :return: same data structure as all_access_counts, but only contains botmaster candidates
+    """
+    botmaster_candidates = {}
+    for ip, ip_result in all_access_counts.items():
+        if (ip_result['total_attempts'] < 20 and ip_result['success_rate'] > 0.8) \
+                or (ip_result['total_attempts'] < 5 and ip_result['success_rate'] > 0.3):
+            botmaster_candidates[ip] = ip_result
+
     return botmaster_candidates
 
 
 def get_used_credentials(ip: str) -> (str, str):
+    """
+    Searches for credentials used for a successful login attempt of an IP address. Assumes there is only one valid
+    credential set for that IP (because multiple valid credential sets of a single botmaster should not be exist).
+    """
     resp = es.search('pb*', {
         "query": {
             "bool": {
@@ -101,7 +122,11 @@ def get_used_credentials(ip: str) -> (str, str):
     return username, password
 
 
-def get_other_ip_count(username: str, password: str) -> int:
+def get_other_ips(username: str, password: str) -> dict:
+    """
+    Searches for IP addresses that have used the same username/password combination
+    :return: dict of IP to total login attempt count
+    """
     resp = es.search('pb*', {
         "query": {
             "bool": {
@@ -124,16 +149,34 @@ def get_other_ip_count(username: str, password: str) -> int:
         },
         "size": 0
     })
-    return len(resp['aggregations']['agg_ip']['buckets']) - 1
+    ips = {}
+    for el in resp['aggregations']['agg_ip']['buckets']:
+        ips[el['key']] = el['doc_count']
+
+    return ips
 
 
 if __name__ == '__main__':
-    candidates = get_botmaster_candidates()
-    print("found the following botmasters (n=" + str(len(botmaster_ips)) + "):")
-    for botmaster_candidate in candidates:
-        username, password = get_used_credentials(botmaster_ip['ip'])
-        count = get_other_ip_count(username, password)
-        print("botmaster ip " + botmaster_ip['ip'] + " has used the credentials "
+    access_counts: dict = get_all_ip_access_counts()
+    candidates: dict = get_botmaster_candidates(access_counts)
+
+    filtered_candidates = {}
+    for ip, metrics in candidates.items():
+        username, password = get_used_credentials(ip)
+        credential_access_counts = get_other_ips(username, password)
+
+        if len(credential_access_counts) == 1:
+            # the current IP is the only one using this credential set, so cant be a botmaster
+            continue
+
+        print("botmaster ip " + metrics['ip'] + " has used the credentials "
               + "username=" + username
               + " password=" + password
-              + " which " + str(other_ip_count) + " other IPs have used")
+              + " which " + str(len(credential_access_counts) - 1) + " other IPs have used")
+
+        metrics['other_ips'] = len(credential_access_counts) - 1
+        filtered_candidates[ip] = metrics
+
+    print("found the following botmasters (n=" + str(len(candidates)) + "):")
+    for ip, metrics in filtered_candidates.items():
+        print(str(metrics))

@@ -122,10 +122,10 @@ def get_used_credentials(ip: str) -> (str, str):
     return username, password
 
 
-def get_other_ips(username: str, password: str) -> dict:
+def get_other_ips(username: str, password: str) -> list:
     """
     Searches for IP addresses that have used the same username/password combination
-    :return: dict of IP to total login attempt count
+    :return: list of IPs
     """
     resp = es.search('pb*', {
         "query": {
@@ -149,9 +149,9 @@ def get_other_ips(username: str, password: str) -> dict:
         },
         "size": 0
     })
-    ips = {}
+    ips = []
     for el in resp['aggregations']['agg_ip']['buckets']:
-        ips[el['key']] = el['doc_count']
+        ips.append(el['key'])
 
     return ips
 
@@ -161,11 +161,12 @@ if __name__ == '__main__':
     candidates: dict = get_botmaster_candidates(access_counts)
 
     filtered_candidates = {}
-    for ip, metrics in candidates.items():
-        username, password = get_used_credentials(ip)
+    for botmaster_ip, metrics in candidates.items():
+        username, password = get_used_credentials(botmaster_ip)
         credential_access_counts = get_other_ips(username, password)
 
         if len(credential_access_counts) == 1:
+            print(botmaster_ip + " was the only IP using credentials username=" + username + ", password=" + password)
             # the current IP is the only one using this credential set, so cant be a botmaster
             continue
 
@@ -174,9 +175,25 @@ if __name__ == '__main__':
               + " password=" + password
               + " which " + str(len(credential_access_counts) - 1) + " other IPs have used")
 
-        metrics['other_ips'] = len(credential_access_counts) - 1
-        filtered_candidates[ip] = metrics
+        bot_ips = []
+        # count every IP address with over 50 login attempts as bot
+        for ip in credential_access_counts:
+            if ip not in access_counts:
+                continue
+            login_attempts = access_counts[ip]['total_attempts']
+            if login_attempts > 20:
+                bot_ips.append(ip)
 
-    print("found the following botmasters (n=" + str(len(candidates)) + "):")
-    for ip, metrics in filtered_candidates.items():
+        if len(bot_ips) == 0:
+            print("other IPs using credentials username=" + username + ", password=" + password
+                  + " from IP " + botmaster_ip + " are no bots")
+            continue
+
+        metrics['other_ips'] = len(credential_access_counts) - 1
+        metrics['bot_count'] = len(bot_ips)
+        metrics['bot_ips'] = bot_ips
+        filtered_candidates[botmaster_ip] = metrics
+
+    print("found the following botmasters (n=" + str(len(filtered_candidates)) + "):")
+    for botmaster_ip, metrics in filtered_candidates.items():
         print(str(metrics))

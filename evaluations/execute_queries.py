@@ -18,6 +18,7 @@ def to_csv(source: str, name: str, response: dict) -> None:
 
     for key, val in response.items():
         out.writerow([key, val])
+    csv_file.close()
 
 
 def map_results(name: str, response: dict) -> dict:
@@ -147,6 +148,7 @@ if __name__ == '__main__':
     files = [f for f in listdir("queries") if isfile(join("queries", f))]
 
     for file in files:
+        print("executing query " + file)
         # read and parse every single query
         data = json.load(open(join("queries", file), 'r'))
         query_name = file[:len(file) - 5]
@@ -186,3 +188,4 @@ if __name__ == '__main__':
             xlabel = "Username and password"
             ylabel = "Successful logins"
             plot("pb-" + query_name, mapped_pb, title=title + " (pb)", xlabel=xlabel, ylabel=ylabel)
+    print("done")

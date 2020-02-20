@@ -1,9 +1,17 @@
+import csv
 from pprint import pprint
 from datetime import datetime, date, timedelta
 
 from elasticsearch import Elasticsearch
 
 es = Elasticsearch([{'host': "localhost", 'port': 9200}])
+
+time_range_constraint = {"range": {
+    "@timestamp": {
+        "gte": "2019-04-15T00:00:00.000000",
+        "lte": "2019-07-25T00:00:00.000000"
+    }
+}}
 
 
 def get_all_ip_access_counts() -> dict:
@@ -19,12 +27,7 @@ def get_all_ip_access_counts() -> dict:
                 "must": [
                     {"match": {"event_type": "login"}},
                     {"match": {"service": "SSH"}},
-                    {"range": {
-                        "@timestamp": {
-                            "gte": "2019-04-15T00:00:00.000000",
-                            "lte": "2019-07-25T00:00:00.000000"
-                        }
-                    }}
+                    time_range_constraint
                 ]
             }
         },
@@ -99,7 +102,7 @@ def get_botmaster_candidates(all_access_counts: dict) -> dict:
     return botmaster_candidates
 
 
-def get_used_credentials(ip: str) -> (str, str):
+def get_used_credentials(ip: str) -> (str, str, str):
     """
     Searches for credentials used for a successful login attempt of an IP address. Assumes there is only one valid
     credential set for that IP (because multiple valid credential sets of a single botmaster should not be exist).
@@ -111,7 +114,8 @@ def get_used_credentials(ip: str) -> (str, str):
                     {"match": {"event_type": "login"}},
                     {"match": {"service": "SSH"}},
                     {"match": {"ip": ip}},
-                    {"match": {"successful": "True"}}
+                    {"match": {"successful": "True"}},
+                    time_range_constraint
                 ]
             }
         },
@@ -119,10 +123,11 @@ def get_used_credentials(ip: str) -> (str, str):
     })
     username = resp['hits']['hits'][0]['_source']['user']
     password = resp['hits']['hits'][0]['_source']['key']
-    return username, password
+    time = resp['hits']['hits'][0]['_source']['@timestamp']
+    return username, password, time
 
 
-def get_other_ips(username: str, password: str) -> list:
+def get_other_ips(username: str, password: str, time: str) -> list:
     """
     Searches for IP addresses that have used the same username/password combination
     :return: list of IPs
@@ -134,7 +139,12 @@ def get_other_ips(username: str, password: str) -> list:
                     {"match": {"event_type": "login"}},
                     {"match": {"service": "SSH"}},
                     {"match": {"user": username}},
-                    {"match": {"key": password}},
+                    {"match": {"key": password}}, {"range": {
+                        "@timestamp": {
+                            "gte": "2019-04-15T00:00:00.000000",
+                            "lte": time
+                        }
+                    }}
                 ]
             }
         },
@@ -162,8 +172,8 @@ if __name__ == '__main__':
 
     filtered_candidates = {}
     for botmaster_ip, metrics in candidates.items():
-        username, password = get_used_credentials(botmaster_ip)
-        credential_access_counts = get_other_ips(username, password)
+        username, password, time = get_used_credentials(botmaster_ip)
+        credential_access_counts = get_other_ips(username, password, time)
 
         if len(credential_access_counts) == 1:
             print(botmaster_ip + " was the only IP using credentials username=" + username + ", password=" + password)
@@ -195,5 +205,12 @@ if __name__ == '__main__':
         filtered_candidates[botmaster_ip] = metrics
 
     print("found the following botmasters (n=" + str(len(filtered_candidates)) + "):")
+
+    csv_file = open("results/botmasters.csv", 'w')
+    out = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC, lineterminator='\n')
+    out.writerow(list(list(filtered_candidates.values())[0].keys()))
     for botmaster_ip, metrics in filtered_candidates.items():
         print(str(metrics))
+        out.writerow(list(metrics.values()))
+    csv_file.close()
+    print("done")

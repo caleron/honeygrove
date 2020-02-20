@@ -95,8 +95,7 @@ def get_botmaster_candidates(all_access_counts: dict) -> dict:
     """
     botmaster_candidates = {}
     for ip, ip_result in all_access_counts.items():
-        if (ip_result['total_attempts'] < 20 and ip_result['success_rate'] > 0.8) \
-                or (ip_result['total_attempts'] < 5 and ip_result['success_rate'] > 0.3):
+        if ip_result['total_attempts'] < 20 and ip_result['success_rate'] > 0.8:
             botmaster_candidates[ip] = ip_result
 
     return botmaster_candidates
@@ -119,7 +118,10 @@ def get_used_credentials(ip: str) -> (str, str, str):
                 ]
             }
         },
-        "size": 1
+        "size": 1,
+        "sort": [
+            {"@timestamp": {"order": "asc"}}
+        ]
     })
     username = resp['hits']['hits'][0]['_source']['user']
     password = resp['hits']['hits'][0]['_source']['key']
@@ -173,9 +175,9 @@ if __name__ == '__main__':
     filtered_candidates = {}
     for botmaster_ip, metrics in candidates.items():
         username, password, time = get_used_credentials(botmaster_ip)
-        credential_access_counts = get_other_ips(username, password, time)
+        ips_using_same_credentials = get_other_ips(username, password, time)
 
-        if len(credential_access_counts) == 1:
+        if len(ips_using_same_credentials) == 1:
             print(botmaster_ip + " was the only IP using credentials username=" + username + ", password=" + password)
             # the current IP is the only one using this credential set, so cant be a botmaster
             continue
@@ -183,11 +185,11 @@ if __name__ == '__main__':
         print("botmaster ip " + metrics['ip'] + " has used the credentials "
               + "username=" + username
               + " password=" + password
-              + " which " + str(len(credential_access_counts) - 1) + " other IPs have used")
+              + " which " + str(len(ips_using_same_credentials) - 1) + " other IPs have used")
 
         bot_ips = []
         # count every IP address with over 50 login attempts as bot
-        for ip in credential_access_counts:
+        for ip in ips_using_same_credentials:
             if ip not in access_counts:
                 continue
             login_attempts = access_counts[ip]['total_attempts']
@@ -199,7 +201,7 @@ if __name__ == '__main__':
                   + " from IP " + botmaster_ip + " are no bots")
             continue
 
-        metrics['other_ips'] = len(credential_access_counts) - 1
+        metrics['other_ips'] = len(ips_using_same_credentials) - 1
         metrics['bot_count'] = len(bot_ips)
         metrics['bot_ips'] = bot_ips
         filtered_candidates[botmaster_ip] = metrics

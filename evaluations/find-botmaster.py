@@ -202,6 +202,8 @@ if __name__ == '__main__':
             continue
 
         metrics['other_ips'] = len(ips_using_same_credentials) - 1
+        metrics['username'] = username
+        metrics['password'] = password
         metrics['bot_count'] = len(bot_ips)
         metrics['bot_ips'] = bot_ips
         filtered_candidates[botmaster_ip] = metrics
